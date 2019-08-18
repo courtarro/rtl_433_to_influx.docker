@@ -7,7 +7,7 @@ ARG GID=1000
 RUN apt-get update &&\
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libusb-1.0-0-dev pkg-config libtool cmake build-essential supervisor &&\
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends librtlsdr-dev rtl-sdr socat &&\
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 python3-influxdb python3-yaml &&\
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 python3-influxdb python3-requests python3-yaml &&\
     apt-get clean &&\
     rm -rf /var/lib/apt/lists/*
 
@@ -22,6 +22,11 @@ RUN mkdir build &&\
     make -j4 &&\
     make install
 
+# Custom script(s)
+WORKDIR /docker
+ADD rtl_433-to-influx.py /docker
+ADD config.yaml /docker
+
 # Limited user setup
 RUN groupadd -g ${GID} docker &&\
     useradd -r -d /docker -u ${UID} -g docker docker
@@ -30,6 +35,5 @@ RUN chown docker:docker /docker
 # Supervisor
 ADD supervisor /etc/supervisor
 
-WORKDIR /docker
 ENTRYPOINT ["supervisord"]
 CMD ["-c", "/etc/supervisor/supervisord.conf"]
