@@ -44,18 +44,26 @@ if __name__ == "__main__":
 
     dbclient = InfluxDBClient(**config['influxdb'])
 
-    cmd_line_raw = "rtl_433 -g 20 -d :12 -F json -M utc -M newmodel -M level"
+    cmd_line_raw = "rtl_433 -F json -M utc -M newmodel -M level"
     cmd_line = cmd_line_raw.split(' ')
-    print(cmd_line)
 
-    print("Starting subprocess", flush=True)
+    if 'rtlsdr' in config:
+        rtl_cfg = config['rtlsdr']
+        if 'gain' in rtl_cfg:
+            cmd_line += ['-g', str(rtl_cfg['gain'])]
+
+        if 'device_serial' in rtl_cfg:
+            cmd_line += ['-d', ':{}'.format(rtl_cfg['device_serial'])]
+        elif 'device_index' in rtl_cfg:
+            cmd_line += ['-d', str(rtl_cfg['device_index'])]
+
+    print("Starting subprocess: {}".format(cmd_line), flush=True)
     proc = subprocess.Popen(cmd_line, stdout=subprocess.PIPE)
 
     try:
         while True:
             line_raw = proc.stdout.readline()
             try:
-                #print(line_raw, flush=True)
                 if not line_raw:
                     break
                 line = json.loads(line_raw)
@@ -64,7 +72,6 @@ if __name__ == "__main__":
                 continue
 
             try:
-                #print(line, flush=True)
                 tags, fields = convert_values(line)
             except Exception as e:
                 print("Unable to convert values: {}".format(e), flush=True)

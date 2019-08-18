@@ -1,0 +1,8 @@
+influxdb:                    # Supports any named argument of the InfluxDBClient Python class
+  host: influxdb
+  port: 8086
+  database: dbname
+#rtlsdr:
+#  device_index: 2           # Indicates the loaded position of the RTL-SDR device (should not be used with device_serial)
+#  device_serial: 12         # Indicates the programmed serial number of the RTL-SDR device (should not be used with device_index)
+#  gain: 20                  # Manual gain setting, or zero for automatic (default = auto)
