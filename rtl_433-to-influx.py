@@ -7,6 +7,7 @@ import subprocess
 import time
 
 from influxdb import InfluxDBClient
+from influxdb.exceptions import InfluxDBServerError
 from requests.exceptions import ConnectionError
 import yaml
 
@@ -42,7 +43,13 @@ if __name__ == "__main__":
         print("If the file does not exist, please copy config.yaml.example and modify it to match your system.")
         exit(1)
 
-    dbclient = InfluxDBClient(**config['influxdb'])
+    dbclient = None
+    while dbclient is None:
+        try:
+            dbclient = InfluxDBClient(**config['influxdb'])
+        except InfluxDBServerError:
+            print("Unable to connect to InfluxDB. Waiting 5 seconds, then retrying...")
+            time.sleep(5)
 
     cmd_line_raw = "rtl_433 -F json -M utc -M newmodel -M level"
     cmd_line = cmd_line_raw.split(' ')
@@ -61,30 +68,33 @@ if __name__ == "__main__":
     proc = subprocess.Popen(cmd_line, stdout=subprocess.PIPE)
 
     try:
-        while True:
-            line_raw = proc.stdout.readline()
-            try:
-                if not line_raw:
-                    break
-                line = json.loads(line_raw)
-            except Exception as e:
-                print("Unable to convert line: {}".format(e), flush=True)
-                continue
+        try:
+            while True:
+                line_raw = proc.stdout.readline()
+                try:
+                    if not line_raw:
+                        break
+                    line = json.loads(line_raw)
+                except Exception as e:
+                    print("Unable to convert line: {}".format(e), flush=True)
+                    continue
 
-            try:
-                tags, fields = convert_values(line)
-            except Exception as e:
-                print("Unable to convert values: {}".format(e), flush=True)
-                continue
+                try:
+                    tags, fields = convert_values(line)
+                except Exception as e:
+                    print("Unable to convert values: {}".format(e), flush=True)
+                    continue
 
-            try:
-                write_values(dbclient, tags, fields)
-            except ConnectionError as e:
-                print("Unable to write to DB: ({})".format(e), flush=True)
-                continue
+                try:
+                    write_values(dbclient, tags, fields)
+                except (ConnectionError, InfluxDBServerError) as e:
+                    print("Unable to write to DB: ({})".format(e), flush=True)
+                    continue
 
-    except KeyboardInterrupt:
-        pass
+        except KeyboardInterrupt:
+            pass
+    except Exception as e:
+        print("An unhandled exception occurred: {}".format(e), flush=True)
 
     print("Shutting down subprocess", flush=True)
     proc.send_signal(subprocess.signal.SIGINT)
