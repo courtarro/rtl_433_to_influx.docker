@@ -4,6 +4,7 @@ import datetime
 import io
 import json
 import subprocess
+import sys
 import time
 
 from influxdb import InfluxDBClient
@@ -11,8 +12,12 @@ from influxdb.exceptions import InfluxDBServerError
 from requests.exceptions import ConnectionError
 import yaml
 
-CONFIG_FILE = "config.yaml"
+CONFIG_FILE_DEFAULT = "config.yaml"
 
+
+def eprint(*args, **kwargs):
+    # Print to stderr
+    print(*args, file=sys.stderr, **kwargs)
 
 def write_values(dbclient, tags, fields):
     points = [{
@@ -35,23 +40,28 @@ def convert_values(line):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) == 2:
+        config_filename = sys.argv[1]
+    else:
+        config_filename = CONFIG_FILE_DEFAULT
+
     try:
-        with io.open(CONFIG_FILE) as config_file:
+        with io.open(config_filename) as config_file:
             config = yaml.safe_load(config_file)
     except Exception as e:
-        print("Unable to read config file: {} (Error: {})".format(CONFIG_FILE, e))
-        print("If the file does not exist, please copy config.yaml.example and modify it to match your system.")
-        exit(1)
+        eprint('Unable to read config file: {} (Error: {})'.format(config_filename, e))
+        eprint('If the file does not exist, please copy config.yaml.example and modify it to match your system.')
+        sys.exit(1)
 
     dbclient = None
     while dbclient is None:
         try:
             dbclient = InfluxDBClient(**config['influxdb'])
         except InfluxDBServerError:
-            print("Unable to connect to InfluxDB. Waiting 5 seconds, then retrying...")
+            eprint('Unable to connect to InfluxDB. Waiting 5 seconds, then retrying...')
             time.sleep(5)
 
-    cmd_line_raw = "rtl_433 -F json -M utc -M newmodel -M level"
+    cmd_line_raw = 'rtl_433 -F json -M utc -M newmodel -M level'
     cmd_line = cmd_line_raw.split(' ')
 
     if 'rtlsdr' in config:
@@ -64,7 +74,10 @@ if __name__ == "__main__":
         elif 'device_index' in rtl_cfg:
             cmd_line += ['-d', str(rtl_cfg['device_index'])]
 
-    print("Starting subprocess: {}".format(cmd_line), flush=True)
+        if 'frequency' in rtl_cfg:
+            cmd_line += ['-f', str(rtl_cfg['frequency'])]
+
+    print('Starting subprocess: {}'.format(' '.join(cmd_line)), flush=True)
     proc = subprocess.Popen(cmd_line, stdout=subprocess.PIPE)
 
     try:
@@ -76,26 +89,28 @@ if __name__ == "__main__":
                         break
                     line = json.loads(line_raw)
                 except Exception as e:
-                    print("Unable to convert line: {}".format(e), flush=True)
+                    eprint('Unable to convert line: {}'.format(e), flush=True)
                     continue
 
                 try:
                     tags, fields = convert_values(line)
                 except Exception as e:
-                    print("Unable to convert values: {}".format(e), flush=True)
+                    eprint('Unable to convert values: {}'.format(e), flush=True)
                     continue
 
                 try:
                     write_values(dbclient, tags, fields)
                 except (ConnectionError, InfluxDBServerError) as e:
-                    print("Unable to write to DB: ({})".format(e), flush=True)
+                    eprint('Unable to write to DB: ({})'.format(e), flush=True)
                     continue
 
         except KeyboardInterrupt:
+            # This will break us out of the loop, but continue execution to shut things down
             pass
     except Exception as e:
-        print("An unhandled exception occurred: {}".format(e), flush=True)
+        # Something serious happened and we don't know how to recover
+        eprint('An unhandled exception occurred: {}'.format(e), flush=True)
 
-    print("Shutting down subprocess", flush=True)
+    print('Shutting down subprocess', flush=True)
     proc.send_signal(subprocess.signal.SIGINT)
-    proc.wait()
+    proc.wait(timeout=5)

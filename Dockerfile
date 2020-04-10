@@ -24,13 +24,13 @@ RUN mkdir build &&\
 
 # Custom script(s)
 WORKDIR /docker
-ADD rtl_433-to-influx.py /docker
-ADD config.yaml /docker
+ADD rtl_433-to-influx.py /docker/
+ADD config*.yaml /docker/
 
 # Limited user setup
 RUN groupadd -g ${GID} docker &&\
     useradd -r -d /docker -u ${UID} -g docker docker
-RUN chown docker:docker /docker
+RUN chown docker:docker /docker/
 
 # Supervisor
 ADD supervisor /etc/supervisor
